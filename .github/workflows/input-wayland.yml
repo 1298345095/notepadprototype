@@ -21,8 +21,10 @@ jobs:
           persist-credentials: false
       - name: Install Weston and native Wayland development dependencies
         run: |
-          sudo apt-get -qq update
-          sudo apt-get -qq install -y weston xvfb xauth ninja-build libwayland-dev wayland-protocols libxkbcommon-dev libpango1.0-dev libcairo2-dev libdecor-0-dev libdbus-1-dev libgtk-3-dev
+          printf '%s\n' 'deb https://archive.ubuntu.com/ubuntu noble main universe' 'deb https://archive.ubuntu.com/ubuntu noble-updates main universe' 'deb https://archive.ubuntu.com/ubuntu noble-security main universe' > "$RUNNER_TEMP/ubuntu.list"
+          opts=(-o "Dir::Etc::SourceList=$RUNNER_TEMP/ubuntu.list" -o Dir::Etc::SourceParts=- -o Acquire::Retries=1 -o Acquire::https::Timeout=20)
+          sudo apt-get "${opts[@]}" -qq update
+          sudo apt-get "${opts[@]}" install -y --no-install-recommends weston xvfb xauth ninja-build libwayland-dev wayland-protocols libxkbcommon-dev libpango1.0-dev libcairo2-dev libdecor-0-dev libdbus-1-dev libgtk-3-dev
       - name: Compile Wayland-only FLTK 1.4.5 and the observer
         run: |
           cmake -S experiments/input-host/wayland -B build-wayland -G Ninja -DFLTK_SRC="$PWD/deps/fltk" -DCMAKE_BUILD_TYPE=Release
