@@ -31,3 +31,11 @@ jobs:
           name: native-windows-measurements
           path: results/
           if-no-files-found: error
+      - name: Capture the native windows with the same document and client size
+        shell: pwsh
+        run: ./tests/capture.ps1 -FltkExe ./binaries/np4-fltk-win64/np4-fltk-win64.exe -WxExe ./binaries/np4-wx-win64/np4-wx-win64.exe -OutDir screenshots
+      - uses: actions/upload-artifact@v4
+        with:
+          name: native-windows-appearance
+          path: screenshots/
+          if-no-files-found: error
