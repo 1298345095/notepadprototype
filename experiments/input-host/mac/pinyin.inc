@@ -26,6 +26,32 @@ static void pinyinKey(NSWindow *window, unsigned short code, NSString *ch, BOOL 
     }
     pump();
 }
+static NSDictionary *textViewControl(ProbeEditor *editor) {
+    NSWindow *window = editor.window;
+    NSView *parent = window.contentView;
+    NSTextView *view = [[NSTextView alloc] initWithFrame:parent.bounds];
+    view.richText = NO;
+    [parent addSubview:view];
+    BOOL focused = [window makeFirstResponder:view] && window.firstResponder == view;
+    pump();
+    NSMutableArray *states = [NSMutableArray array];
+    void (^record)(NSString *) = ^(NSString *stage) {
+        [states addObject:@{@"stage":stage,@"text":[view.string copy],@"selection":NSStringFromRange(view.selectedRange),
+                            @"marked":@(view.hasMarkedText),@"markedRange":NSStringFromRange(view.markedRange)}];
+    };
+    if (focused) {
+        const unsigned short codes[] = {45,34,4,0,31};
+        for (unsigned short code : codes) pinyinKey(window,code,@"",YES);
+        record(@"nihao");
+        pinyinKey(window,123,@"",YES); record(@"left");
+        pinyinKey(window,124,@"",YES); record(@"right");
+        pinyinKey(window,49,@" ",YES); pump(); record(@"space");
+        if (view.hasMarkedText) { pinyinKey(window,49,@" ",YES); record(@"second-space"); }
+    }
+    [window makeFirstResponder:editor.content];
+    [view removeFromSuperview];
+    return @{@"focused":@(focused),@"source":activeSource() ?: @"",@"states":states};
+}
 static void testPinyin(ProbeEditor *editor) {
     NSString *target = @"com.apple.inputmethod.SCIM.ITABC";
     SCIContentView *content = editor.content;
@@ -124,6 +150,7 @@ static void testPinyin(ProbeEditor *editor) {
             pinyinKey(win,49,@" ",YES);
             log[@"compositionWithCodeList"] = editor.string ?: @"";
             log[@"listStillActive"] = @([editor message:SCI_AUTOCACTIVE]);
+            log[@"nativeTextViewControl"] = textViewControl(editor);
         }
         return sawMarked && chinese && ended && focusAfter && restored &&
             [log[@"afterKeys"] isEqual:target] ? @"pass" : @"source-active-behaviour-incomplete";
