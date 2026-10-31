@@ -17,12 +17,13 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $log = gh api "repos/$env:GITHUB_REPOSITORY/actions/jobs/124678202151/logs"
+          $log = gh api --allow-escape-sequences "repos/$env:GITHUB_REPOSITORY/actions/jobs/124678202151/logs"
           if ($LASTEXITCODE) { throw 'Could not read the verified Kivy job' }
           $sizes = @($log | Select-String -CaseSensitive -Pattern 'PASS Kivy:|PASS np4-kivy-probe.exe  Bytes=')
           if ($sizes.Count -lt 2) { throw 'Incomplete original result' }
-          $sizes | ForEach-Object { Write-Output $_.Line; $_.Line >> $env:GITHUB_STEP_SUMMARY }
+          $sizes | ForEach-Object { $plain = $_.Line -replace '\x1b\[[0-9;]*m', ''; Write-Output $plain; $plain >> $env:GITHUB_STEP_SUMMARY }
   common-runner:
+    if: ${{ !contains(github.event.head_commit.message, '[footprint-only]') }}
     runs-on: windows-2022
     timeout-minutes: 20
     steps:
