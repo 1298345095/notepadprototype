@@ -36,6 +36,7 @@ jobs:
         run: |
           set -o pipefail
           f=0
+          env NP4_PINYIN_QUARTZ=1 DYLD_FRAMEWORK_PATH="$PWD/build-mac-probe" "$PWD/build-mac-probe/fltk.app/Contents/MacOS/probe" 2>&1 | tee fltk-quartz-original.txt
           env NP4_ROUTE_ARROWS=1 NP4_PINYIN_QUARTZ=1 DYLD_FRAMEWORK_PATH="$PWD/build-mac-probe" "$PWD/build-mac-probe/fltk.app/Contents/MacOS/probe" 2>&1 | tee fltk-arrow.txt || f=$?
           env NP4_PINYIN_QUARTZ=1 DYLD_FRAMEWORK_PATH="$PWD/build-mac-probe" "$PWD/build-mac-probe/wx.app/Contents/MacOS/probe" 2>&1 | tee wx-quartz.txt
           exit "$f"
@@ -47,4 +48,5 @@ jobs:
             fltk.txt
             wx.txt
             fltk-arrow.txt
+            fltk-quartz-original.txt
             wx-quartz.txt

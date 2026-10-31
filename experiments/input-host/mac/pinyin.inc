@@ -83,6 +83,15 @@ static void testPinyin(ProbeEditor *editor) {
             [steps addObject:@{@"marked":@(content.hasMarkedText),
                 @"range":NSStringFromRange(content.markedRange), @"text":editor.string ?: @""}];
         }
+        if (quartz && sawMarked) {
+            NSMutableArray *carets = [NSMutableArray arrayWithObject:@([editor message:SCI_GETCURRENTPOS])];
+            pinyinKey(win,123,@"\uF702",YES);
+            [carets addObject:@([editor message:SCI_GETCURRENTPOS])];
+            pinyinKey(win,124,@"\uF703",YES);
+            [carets addObject:@([editor message:SCI_GETCURRENTPOS])];
+            log[@"preeditCaretsBeforeLeftRight"] = carets;
+            log[@"markedAfterArrows"] = @(content.hasMarkedText);
+        }
         pinyinKey(win,49,@" ",quartz);
         for (int i = 0; i < 4; ++i) pump();
         NSString *text = editor.string ?: @"";
@@ -95,6 +104,27 @@ static void testPinyin(ProbeEditor *editor) {
         [editor message:SCI_UNDO];
         BOOL restored = [editor.string isEqualToString:@""];
         log[@"undoText"] = editor.string ?: @"";
+        if (quartz && sawMarked && restored) {
+            pinyinKey(win,45,@"n",YES); pinyinKey(win,34,@"i",YES);
+            BOOL hadMark = content.hasMarkedText;
+            pinyinKey(win,53,@"\x1b",YES);
+            log[@"cancelledSecondPreedit"] = @(hadMark && !content.hasMarkedText && editor.string.length == 0);
+            [editor setString:@"A中😀B"];
+            [editor message:SCI_SETSEL wParam:1 lParam:8];
+            for (NSUInteger i = 0; i < letters.length; ++i)
+                pinyinKey(win,codes[i],[letters substringWithRange:NSMakeRange(i,1)],YES);
+            pinyinKey(win,49,@" ",YES);
+            log[@"replacement"] = editor.string ?: @"";
+            [editor setString:@"al"];
+            [editor message:SCI_GOTOPOS wParam:2];
+            [editor message:SCI_AUTOCSHOW wParam:2 lParam:reinterpret_cast<sptr_t>("alpha alpine")];
+            log[@"listInitiallyActive"] = @([editor message:SCI_AUTOCACTIVE]);
+            for (NSUInteger i = 0; i < letters.length; ++i)
+                pinyinKey(win,codes[i],[letters substringWithRange:NSMakeRange(i,1)],YES);
+            pinyinKey(win,49,@" ",YES);
+            log[@"compositionWithCodeList"] = editor.string ?: @"";
+            log[@"listStillActive"] = @([editor message:SCI_AUTOCACTIVE]);
+        }
         return sawMarked && chinese && ended && focusAfter && restored &&
             [log[@"afterKeys"] isEqual:target] ? @"pass" : @"source-active-behaviour-incomplete";
     }();

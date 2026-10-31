@@ -126,10 +126,11 @@ static int test(ProbeEditor *editor) {
         keyWindow, focused, selection, rect, (unsigned long)index, marked, committed,
         clicks, ordinary, typed, arrow, moved, command, selectedAll, folded, popup, completed);
     fflush(stdout);
+    const bool singleArrowInHostTest = moved && arrow == 1;
     testPinyin(editor);
 #if defined(PROBE_FLTK)
     if (monitor) [NSEvent removeMonitor:monitor];
-    if (std::getenv("NP4_ROUTE_ARROWS") && (!moved || arrow != 1)) return 4;
+    if (std::getenv("NP4_ROUTE_ARROWS") && !singleArrowInHostTest) return 4;
 #endif
     // Keep shortcuts diagnostic so one unsuccessful key never hides other results.
     return !(focused && selection && rect && index == 1 && marked && committed && clicks && typed
