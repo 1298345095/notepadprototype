@@ -2,6 +2,13 @@ name: Additional Notepad4 toolkit probes
 on:
   push:
     branches: [evaluate/native-toolkit-hosts]
+    paths:
+      - .github/workflows/toolkits.yml
+      - experiments/core-probe/**
+      - experiments/kivy/**
+      - experiments/fxruby/**
+      - experiments/fox/**
+      - experiments/tk/**
   workflow_dispatch:
 permissions:
   contents: read
