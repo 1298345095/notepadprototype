@@ -13,9 +13,11 @@
 #include <FL/platform.H>
 #include "Scintilla.h"
 #include "SciLexer.h"
+#include "demo.hpp"
 #include "native_workload.hpp"
 #include <filesystem>
 #include <climits>
+#include <cwchar>
 #include <cstdio>
 #include <stdexcept>
 #include <string>
@@ -120,9 +122,9 @@ public:
         if (shown()) RemoveWindowSubclass(fltkHwnd(), parentProc, 1);
     }
     HWND fltkHwnd() const { return fl_xid(this); }
-    void open(const fs::path &input, bool test) {
+    void open(const fs::path &input) {
         if (!input.empty()) path = fs::absolute(input);
-        const std::string bytes = path.empty() ? "{key:'中', yes:true}\n" : readUtf8(path);
+        const std::string bytes = path.empty() ? startupDemo : readUtf8(path);
         show();
         auto parent = fltkHwnd();
         SetWindowLongPtrW(parent, GWL_STYLE, GetWindowLongPtrW(parent, GWL_STYLE) | WS_CLIPCHILDREN);
@@ -140,8 +142,8 @@ public:
         sci(SCI_STYLESETFONT, STYLE_DEFAULT, pointer("Consolas"));
         sci(SCI_STYLESETSIZE, STYLE_DEFAULT, 11);
         sci(SCI_STYLECLEARALL);
-        auto ext = path.extension().wstring();
-        const bool json = test || path.empty() || ext == L".json" || ext == L".json5";
+        const auto ext = path.extension().wstring();
+        const bool json = path.empty() || _wcsicmp(ext.c_str(), L".json") == 0 || _wcsicmp(ext.c_str(), L".json5") == 0;
         sci(SCI_SETLEXER, json ? SCLEX_JSON : SCLEX_NULL);
         if (json) {
             sci(SCI_SETKEYWORDS, 0, pointer("Infinity NaN false null true"));
@@ -211,7 +213,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
         if (saveTest && fileArgument.empty()) throw std::runtime_error("Provide an existing UTF-8 fixture");
         ForkWindowClass forkClass(instance);
         Host window;
-        window.open(saveTest ? fileArgument : (test || bench ? fs::path{} : fs::path(arg)), test || bench);
+        window.open(saveTest ? fileArgument : (test || bench ? fs::path{} : fs::path(arg)));
         if (bench) return window.bench();
         if (test) { window.verify(); return 0; }
         if (saveTest) { window.verifyFileSave(); return 0; }

@@ -84,7 +84,15 @@ try {
     if ([Convert]::ToBase64String($actual) -cne [Convert]::ToBase64String($expected)) {
         throw 'Saved bytes differ from the expected UTF-8 contents.'
     }
-    $extra = @(Get-ChildItem -LiteralPath $work -Force | Where-Object { $_.FullName -notin @($isolatedExe, $fixture) })
+    # A named zero-byte file must open with zero bytes, even though double-click
+    # startup has an editable example. The self-test checks bytes before editing.
+    $emptyFixture = Join-Path $work '空文件.JSON5'
+    [IO.File]::WriteAllBytes($emptyFixture, [byte[]]@())
+    Run-EditorTest -EditorArguments @('--file-self-test', $emptyFixture)
+    if ([Convert]::ToBase64String([IO.File]::ReadAllBytes($emptyFixture)) -cne [Convert]::ToBase64String($expected)) {
+        throw 'Failed to open and edit a named empty file.'
+    }
+    $extra = @(Get-ChildItem -LiteralPath $work -Force | Where-Object { $_.FullName -notin @($isolatedExe, $fixture, $emptyFixture) })
     if ($extra.Count) { throw "Unexpected items created next to the EXE: $($extra.Name -join ', ')" }
     $hash = (Get-FileHash -LiteralPath $isolatedExe -Algorithm SHA256).Hash
     Write-Host "PASS $($inputFile.Name)  Bytes=$($inputFile.Length)  SHA256=$hash"

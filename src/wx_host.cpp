@@ -12,6 +12,7 @@
 #include <string_view>
 #include "Scintilla.h"
 #include "SciLexer.h"
+#include "demo.hpp"
 #include "native_workload.hpp"
 
 static std::string ReadBytes(const wxString& path) {
@@ -109,9 +110,10 @@ public:
         Layout();
         if (!::SetWindowSubclass(sci, KeyProc, 1, reinterpret_cast<DWORD_PTR>(this)))
             throw std::runtime_error("Could not install the Save shortcut");
-        const std::string bytes = path.empty() ? std::string{} : ReadBytes(path);
+        const std::string bytes = path.empty() ? startupDemo : ReadBytes(path);
+        const wxString ext = wxFileName(path).GetExt().Lower();
         Sci(SCI_SETMODEVENTMASK, SC_MOD_INSERTTEXT | SC_MOD_DELETETEXT);
-        SetDocument(bytes, wxFileName(path).GetExt().Lower() == "json");
+        SetDocument(bytes, path.empty() || ext == "json" || ext == "json5");
     }
     int Benchmark() { return np4_native_bench(sci); }
     void FocusEditor() { ::SetFocus(sci); }
@@ -125,6 +127,7 @@ public:
     }
     bool SelfTest() {
         static_assert(SCI_GETCHARACTERANDWIDTH == 2067);
+        if (Bytes() != startupDemo || Sci(SCI_GETLEXER) != SCLEX_JSON) return false;
         const std::string sample = "{\"name\":\"中文😀\"}\n";
         SetDocument(sample, true);
         Sci(SCI_COLOURISE, 0, -1);
