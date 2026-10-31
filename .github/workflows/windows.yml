@@ -2,6 +2,12 @@ name: Native Windows single-file builds
 on:
   push:
     branches: [main]
+    paths:
+      - CMakeLists.txt
+      - engine/**
+      - src/**
+      - tests/verify.ps1
+      - .github/workflows/windows.yml
   workflow_dispatch:
 permissions:
   contents: read
