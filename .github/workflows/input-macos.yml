@@ -30,7 +30,7 @@ jobs:
         if: '!cancelled() && steps.fltk.outcome != ''skipped'''
         run: |
           set -o pipefail
-          bash experiments/input-host/mac/run.sh "$PWD/scintilla" wx "$(brew --prefix wxwidgets@3.2)/bin/wx-config" 2>&1 | tee wx.txt
+          bash experiments/input-host/mac/run.sh "$PWD/scintilla" wx "$(brew --prefix wxwidgets@3.2)/bin/wx-config-3.2" 2>&1 | tee wx.txt
       - uses: actions/upload-artifact@v4
         if: always()
         with:

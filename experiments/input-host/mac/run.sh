@@ -23,6 +23,6 @@ esac
 # config scripts intentionally produce whitespace-separated compiler/linker flags.
 clang++ -std=c++17 -fobjc-arc $("$cfg" --cxxflags) -std=c++17 "$define" \
     -I"$src/cocoa" -I"$src/include" -F"$build" \
-    "$here/probe.mm" -framework Scintilla -framework Cocoa $link \
+    "$here/probe.mm" -framework Scintilla -framework Cocoa -framework Carbon $link \
     -Wl,-rpath,"$build" -o "$build/probe-$host"
 DYLD_FRAMEWORK_PATH="$build" "$build/probe-$host"

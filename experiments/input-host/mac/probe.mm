@@ -50,6 +50,8 @@ static void key(NSWindow *window, unsigned short code, NSString *ch, NSEventModi
     }
     pump();
 }
+#include "pinyin.inc"
+
 static int test(ProbeEditor *editor) {
     SCIContentView *content = [editor content];
     NSWindow *win = editor.window;
@@ -68,7 +70,7 @@ static int test(ProbeEditor *editor) {
     NSUInteger index = [content characterIndexForPoint:screen];
     const NSRange noReplace = NSMakeRange(NSNotFound,0);
     id<NSTextInputClient> responder = (id)win.firstResponder;
-    if (![responder conformsToProtocol:@protocol(NSTextInputClient)]) return 2;
+    if (![(NSObject *)responder conformsToProtocol:@protocol(NSTextInputClient)]) return 2;
     [responder setMarkedText:@"zhong" selectedRange:NSMakeRange(5,0) replacementRange:noReplace];
     BOOL marked = responder.hasMarkedText;
     [responder insertText:@"文" replacementRange:noReplace];
@@ -109,6 +111,8 @@ static int test(ProbeEditor *editor) {
         "cmdKeyDown=%u cmdASelectedAll=%d folded=%d popup=%d completed=%d\n",
         keyWindow, focused, selection, rect, (unsigned long)index, marked, committed,
         clicks, ordinary, typed, arrow, moved, command, selectedAll, folded, popup, completed);
+    fflush(stdout);
+    testPinyin(editor);
     // Keep shortcuts diagnostic so one unsuccessful key never hides other results.
     return !(focused && selection && rect && index == 1 && marked && committed && clicks && typed
         && folded && popup && completed);
