@@ -1,0 +1,28 @@
+name: Cocoa document-layer experiment
+on:
+  push:
+    branches: [evaluate/native-toolkit-hosts]
+    paths: ['experiments/cocoa/**', '.github/workflows/cocoa.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  appkit:
+    runs-on: macos-15
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/checkout@v4
+        with:
+          repository: zufuliu/notepad4
+          ref: bc2fb59cd927288fc07bcdae48e91780cc5139d6
+          path: deps/notepad4
+          persist-credentials: false
+      - name: Build and test native NSView with the fork document and JSON lexer
+        run: bash experiments/cocoa/build.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cocoa-document-probe-arm64
+          path: out-cocoa/
+          if-no-files-found: error
