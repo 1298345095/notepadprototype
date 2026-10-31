@@ -60,6 +60,7 @@ jobs:
           path: out/${{ matrix.ui }}/np4-${{ matrix.ui }}.exe
           if-no-files-found: error
   bindings:
+    if: ${{ !contains(github.event.head_commit.message, '[native-only]') }}
     name: ${{ matrix.ui }} native-child test
     runs-on: windows-2022
     timeout-minutes: 25

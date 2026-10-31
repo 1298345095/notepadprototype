@@ -15,7 +15,7 @@ Invoke-Nmake $tk @("TCLDIR=$tcl",'release')
 function One([string]$dir,[string]$pattern) {
     $found = @(Get-ChildItem -LiteralPath "$dir/win" -Recurse -File -Filter $pattern)
     if ($found.Count -ne 1) { throw "Expected one $pattern under $dir/win; found $($found.Count)" }
-    return $found[0].FullName
+    return $found[0].FullName.Replace([char]92, [char]47)
 }
 $tclLib = One $tcl 'tcl90sx.lib'
 $tkLib = One $tk 'tcl9tk90sx.lib'

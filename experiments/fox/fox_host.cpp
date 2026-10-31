@@ -8,8 +8,6 @@
 #include <windows.h>
 #include <commctrl.h>
 #include <shellapi.h>
-#define FX_NO_GLOBAL_NAMESPACE
-#include <fx.h>
 #include "Scintilla.h"
 #include "SciLexer.h"
 #include "demo.hpp"
@@ -21,6 +19,13 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <cmath>
+
+// The UCRT supplies ISO C99 float math. Keep FOX 1.6 from replacing
+// their names with the fallback macros intended for older MSVC runtimes.
+#define FLOAT_MATH_FUNCTIONS
+#define FX_NO_GLOBAL_NAMESPACE
+#include <fx.h>
 
 namespace fs = std::filesystem;
 
