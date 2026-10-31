@@ -1,0 +1,183 @@
+{
+  "run": "https://github.com/1298345095/notepadprototype/actions/runs/41253628027",
+  "source": "f5fab2a2861149a162a4de199da5d6510888fd81",
+  "hosts": {
+    "fltk": {
+      "elf": 1387320,
+      "package": 520672,
+      "sha256": "08f0b37474b216af4f92a808b9a2a56262e013dff9018de744be05f6f49c7c42",
+      "libs": [
+        "libwayland-cursor.so.0",
+        "libwayland-client.so.0",
+        "libxkbcommon.so.0",
+        "libdbus-1.so.3",
+        "libpango-1.0.so.0",
+        "libpangocairo-1.0.so.0",
+        "libgobject-2.0.so.0",
+        "libglib-2.0.so.0",
+        "libcairo.so.2",
+        "libstdc++.so.6",
+        "libm.so.6",
+        "libgcc_s.so.1",
+        "libc.so.6"
+      ],
+      "checks": [
+        [
+          15,
+          15
+        ],
+        [
+          15,
+          15
+        ],
+        [
+          15,
+          15
+        ]
+      ],
+      "rss_mib": [
+        41.25,
+        41.42578125,
+        41.37109375
+      ],
+      "bench": {
+        "hit256MedianUs": [
+          200.979,
+          197.644,
+          202.501
+        ],
+        "hit256P95Us": [
+          212.276,
+          203.082,
+          217.483
+        ],
+        "completionMedianUs": [
+          1082.74,
+          1087.27,
+          1085.4
+        ],
+        "completionP95Us": [
+          1135.57,
+          1136.91,
+          1157.83
+        ]
+      },
+      "frames": {
+        "n": 21,
+        "median": 1.558,
+        "p95": 1.622
+      },
+      "selection": {
+        "start": "159",
+        "end": "167",
+        "expectedStart": "159",
+        "expectedEnd": "167",
+        "selectedHex": "42e4b8adf09f9880",
+        "ok": "1"
+      },
+      "dragplan": {
+        "modelX1": "386",
+        "modelX2": "439",
+        "folded": "1",
+        "wraps": "10",
+        "x1": "386",
+        "x2": "437",
+        "y": "80"
+      },
+      "selectionScreenshot": "fltk-selection.png",
+      "tarSha256": "47ca921839a74de73d2da6a70fee5db7130a3086926d17e4466e46ed7cd772f9"
+    },
+    "wx": {
+      "elf": 6249880,
+      "package": 1700752,
+      "sha256": "a15c2329b41f6cf39165571db436b8c27e9f9cf9666eefa5f8f3474a4dae2e47",
+      "libs": [
+        "libgtk-3.so.0",
+        "libgdk-3.so.0",
+        "libatk-1.0.so.0",
+        "libcairo-gobject.so.2",
+        "libgdk_pixbuf-2.0.so.0",
+        "libgio-2.0.so.0",
+        "libpangocairo-1.0.so.0",
+        "libpango-1.0.so.0",
+        "libcairo.so.2",
+        "libgobject-2.0.so.0",
+        "libglib-2.0.so.0",
+        "libSM.so.6",
+        "libX11.so.6",
+        "libxkbcommon.so.0",
+        "libpng16.so.16",
+        "libstdc++.so.6",
+        "libm.so.6",
+        "libc.so.6",
+        "ld-linux-x86-64.so.2",
+        "libgcc_s.so.1"
+      ],
+      "checks": [
+        [
+          15,
+          15
+        ],
+        [
+          15,
+          15
+        ],
+        [
+          15,
+          15
+        ]
+      ],
+      "rss_mib": [
+        52.828125,
+        52.8515625,
+        52.94140625
+      ],
+      "bench": {
+        "hit256MedianUs": [
+          361.107,
+          356.3,
+          348.689
+        ],
+        "hit256P95Us": [
+          368.568,
+          362.579,
+          354.878
+        ],
+        "completionMedianUs": [
+          1372.27,
+          1326.23,
+          1280.16
+        ],
+        "completionP95Us": [
+          1525.57,
+          1565.65,
+          1481.94
+        ]
+      },
+      "frames": {
+        "n": 21,
+        "median": 2.562,
+        "p95": 2.741
+      },
+      "selection": {
+        "start": "159",
+        "end": "167",
+        "expectedStart": "159",
+        "expectedEnd": "167",
+        "selectedHex": "42e4b8adf09f9880",
+        "ok": "1"
+      },
+      "dragplan": {
+        "modelX1": "450",
+        "modelX2": "503",
+        "folded": "1",
+        "wraps": "10",
+        "x1": "449",
+        "x2": "500",
+        "y": "80"
+      },
+      "selectionScreenshot": "wx-selection.png",
+      "tarSha256": "288f59e736b1a324b94644bd7b1838b0859b766a66e7990c2b45c8277d319770"
+    }
+  }
+}

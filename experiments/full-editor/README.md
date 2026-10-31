@@ -2,6 +2,25 @@
 
 两套 Wayland 编辑区由不同开发任务独立实现，公用同一个 Notepad4 fork、同一个 JSON 补全实现和同一套桌面输入测试。FLTK 通过 Cairo/Pango 绘制 fork 的编辑视图。wxGTK 把由上游 GTK3 平台层适配而来的 fork 控件放入一个可聚焦的 GTK 子控件树。两者均编译 fork 的 `Editor`、`EditView`、`ScintillaBase`、`ContractionState` 和 JSON lexer。
 
+## 实测与选型
+
+最终 Ubuntu 24.04 x86-64 原生作业在同一 runner 按 FLTK/wx、wx/FLTK、FLTK/wx 的顺序交替运行。每个宿主独立启动三次，每次通过 15/15 项检查。[原生运行](https://github.com/1298345095/notepadprototype/actions/runs/41253628027) · [可执行下载包](https://github.com/1298345095/notepadprototype/actions/runs/41253628027/artifacts/13062068585) · [协议、截图与逐轮原始结果](https://github.com/1298345095/notepadprototype/actions/runs/41253628027/artifacts/13062312695) · [稳定保存的实测数据](evidence/measurements.json)
+
+| 指标 | FLTK Cairo 窗口装饰 | wxWidgets GTK3 |
+|---|---:|---:|
+| 剥离符号后的 ELF | 1.32 MiB | 5.96 MiB |
+| 单个程序的 tar.xz，含许可与依赖清单 | 0.50 MiB | 1.62 MiB |
+| 工作负载完成后的 RSS，中位数 | 41.4 MiB | 52.9 MiB |
+| 256 次同一热行的坐标命中，中位数 / P95 | 201 / 212 µs | 356 / 363 µs |
+| 1,048,673 字节文档内找词并打开列表，中位数 / P95 | 1.09 / 1.14 ms | 1.33 / 1.53 ms |
+| 输入法预编辑事务至下一次主窗口提交重绘缓冲，中位数 / P95 | 1.56 / 1.62 ms | 2.56 / 2.74 ms |
+
+两边静态链接各自的 GUI 框架，动态使用系统图形、字体、C++ 等库。最终 FLTK 选择内置 Cairo 装饰，ELF 不再直接依赖 GTK3 或 GDK3，wx 仍使用它们。RSS 包含共享页面，不等于独占内存。命中和找词先预热，再分别取 31 和 17 个样本，表中统计取三个独立进程结果的中位数。找词测的是同步调用，不含桌面呈现。最后一行用 Wayland trace 对每个宿主的 21 次预编辑事务计时，终点是编辑器主 surface 提交带 damage 的新缓冲，不含输入法引擎在发送前的耗时和显示器扫描。[计算脚本](runner/frame_times.py)
+
+外部鼠标点击边栏后，目标长行换为 10 个显示行。两种宿主拖选都返回 UTF-8 区间 `[159,167)`，正好是 `B中😀`，前方是 e 与组合重音。文档中 Beta 改为 Zeta 后候选即时更新，语言前缀 `tr` 则从应用词表补为 `true`。列表打开时拼音光标与协议都为 `6 → 5 → 6`，上屏后的文本为 `np4ProofCan你好`，没有误选代码候选。每轮 fork 记录 2 个正式 IME 字符通知。[FLTK 整屏截图](evidence/fltk-selection.png) · [wxGTK 整屏截图](evidence/wx-selection.png)
+
+FLTK 的 3 个自写平台实现共 411 个物理源代码行，另有两个 FLTK 驱动文件的 +41/−2 行。wx 有 76 行宿主，另在上游 GTK 的 4 个文件上做 +200/−210 行适配。删除行、新增行和新写完整功能代表不同维护工作，不能相加换算成人天。两条路线共用的 fork 可移植性、补全适配和测试均单列。就当前验证的轻量 Linux 编辑区而言，FLTK 的体积收益已实测；若维护目标涵盖原生滚动条、输入法前后文、辅助功能及更广泛平台行为，完整产品优先 wx。macOS 的完整 fork 没有在本轮重建。[上轮系统输入研究](../input-host/README.md)
+
 ## 运行
 
 原型面向 Ubuntu 24.04 x86-64 或具有兼容系统库的 Linux，使用原生 Wayland 图形会话。解开 Actions 的下载包，其中有两个独立 tar.xz，任选其一。
