@@ -17,11 +17,21 @@ static NSString *activeSource() {
     if (current) CFRelease(current);
     return identifier;
 }
+static void pinyinKey(NSWindow *window, unsigned short code, NSString *ch, BOOL quartz) {
+    if (!quartz) { key(window,code,ch,0); return; }
+    for (bool down : {true, false}) {
+        CGEventRef e = CGEventCreateKeyboardEvent(NULL, code, down);
+        CGEventPost(kCGHIDEventTap, e);
+        CFRelease(e);
+    }
+    pump();
+}
 static void testPinyin(ProbeEditor *editor) {
     NSString *target = @"com.apple.inputmethod.SCIM.ITABC";
     SCIContentView *content = editor.content;
     NSWindow *win = editor.window;
     const BOOL focused = [win makeFirstResponder:content] && win.firstResponder == content;
+    const BOOL quartz = std::getenv("NP4_PINYIN_QUARTZ") != nullptr;
     pump();
     TISInputSourceRef old = TISCopyCurrentKeyboardInputSource();
     __attribute__((objc_precise_lifetime)) NSArray *modes =
@@ -33,10 +43,11 @@ static void testPinyin(ProbeEditor *editor) {
     TISInputSourceRef parent = (__bridge TISInputSourceRef)parents.firstObject;
     const BOOL hadParent = sourceEnabled(parent), hadMode = sourceEnabled(mode);
     __block BOOL enabledParent = NO, enabledMode = NO, selected = NO;
-    NSMutableDictionary *log = [@{@"before":sourceID(old) ?: @"", @"target":target,
+    NSMutableDictionary *log = [@{@"transport":quartz ? @"quartz" : @"app-queue", @"postPermission":@(CGPreflightPostEventAccess()), @"before":sourceID(old) ?: @"", @"target":target,
         @"focusedBefore":@(focused), @"initiallyEnabled":@(hadMode)} mutableCopy];
     NSString *result = ^NSString *{
         if (!old || !focused) return @"no-initial-source-or-focus";
+        if (quartz && !CGPreflightPostEventAccess()) return @"event-post-unavailable";
         if (!mode) return @"source-not-installed";
         if (parent && !hadParent) {
             OSStatus status = TISEnableInputSource(parent);
@@ -67,12 +78,13 @@ static void testPinyin(ProbeEditor *editor) {
         NSString *letters = @"nihao";
         BOOL sawMarked = NO;
         for (NSUInteger i = 0; i < letters.length; ++i) {
-            key(win,codes[i],[letters substringWithRange:NSMakeRange(i,1)],0);
+            pinyinKey(win,codes[i],[letters substringWithRange:NSMakeRange(i,1)],quartz);
             sawMarked |= content.hasMarkedText;
             [steps addObject:@{@"marked":@(content.hasMarkedText),
                 @"range":NSStringFromRange(content.markedRange), @"text":editor.string ?: @""}];
         }
-        key(win,49,@" ",0);
+        pinyinKey(win,49,@" ",quartz);
+        for (int i = 0; i < 4; ++i) pump();
         NSString *text = editor.string ?: @"";
         BOOL chinese = [text rangeOfCharacterFromSet:[NSCharacterSet
             characterSetWithRange:NSMakeRange(0x4e00,0x9fff-0x4e00+1)]].location != NSNotFound;

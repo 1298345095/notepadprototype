@@ -59,6 +59,20 @@ static int test(ProbeEditor *editor) {
     [win makeKeyAndOrderFront:nil];
     pump();
     BOOL focused = [win makeFirstResponder:content] && win.firstResponder == content;
+#if defined(PROBE_FLTK)
+    id monitor = nil;
+    if (std::getenv("NP4_ROUTE_ARROWS")) {
+        monitor = [NSEvent addLocalMonitorForEventsMatchingMask:NSEventMaskKeyDown handler:^NSEvent *(NSEvent *e) {
+            if (e.window == win && win.firstResponder == content && e.keyCode >= 123 && e.keyCode <= 126 &&
+                !(e.modifierFlags & (NSEventModifierFlagControl | NSEventModifierFlagCommand |
+                                     NSEventModifierFlagOption | NSEventModifierFlagShift))) {
+                [content keyDown:e];
+                return nil;
+            }
+            return e;
+        }];
+    }
+#endif
     [editor message:SCI_SETCODEPAGE wParam:SC_CP_UTF8];
     [editor setString:@"A中😀B"];
     [editor message:SCI_SETSEL wParam:1 lParam:8];
@@ -113,6 +127,10 @@ static int test(ProbeEditor *editor) {
         clicks, ordinary, typed, arrow, moved, command, selectedAll, folded, popup, completed);
     fflush(stdout);
     testPinyin(editor);
+#if defined(PROBE_FLTK)
+    if (monitor) [NSEvent removeMonitor:monitor];
+    if (std::getenv("NP4_ROUTE_ARROWS") && (!moved || arrow != 1)) return 4;
+#endif
     // Keep shortcuts diagnostic so one unsuccessful key never hides other results.
     return !(focused && selection && rect && index == 1 && marked && committed && clicks && typed
         && folded && popup && completed);
