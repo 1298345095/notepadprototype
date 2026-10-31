@@ -1,0 +1,106 @@
+diff --git a/FL/wayland.H b/FL/wayland.H
+index 71981d9..d55bfd0 100644
+--- a/FL/wayland.H
++++ b/FL/wayland.H
+@@ -26,6 +26,17 @@
+ 
+ typedef struct _cairo cairo_t;
+ 
++// Experimental opt-in hook. Text pointers are UTF-8 and live only in the callback.
++struct Fl_Wayland_Text_Edit {
++  const char *preedit, *commit;
++  int cursor_begin, cursor_end;
++  unsigned int delete_before, delete_after;
++  bool has_preedit, has_commit, has_deletion, serial_matches;
++};
++typedef bool (*Fl_Wayland_Edit_Handler)(struct wl_surface *, const Fl_Wayland_Text_Edit &, void *);
++// Return true only for the focused editor to consume the batch instead of synthetic key events.
++extern FL_EXPORT void fl_wl_set_edit_handler(Fl_Wayland_Edit_Handler handler, void *user);
++
+ /** Returns the Wayland display in use */
+ extern FL_EXPORT struct wl_display *fl_wl_display();
+ /** Returns the wl_surface associated to a shown window */
+diff --git a/src/drivers/Wayland/Fl_Wayland_Screen_Driver.cxx b/src/drivers/Wayland/Fl_Wayland_Screen_Driver.cxx
+index f66200b..c789607 100644
+--- a/src/drivers/Wayland/Fl_Wayland_Screen_Driver.cxx
++++ b/src/drivers/Wayland/Fl_Wayland_Screen_Driver.cxx
+@@ -634,6 +634,14 @@ static uint32_t commit_serial = 0;
+ static char *current_pre_edit = NULL;
+ static char *pending_pre_edit = NULL;
+ static char *pending_commit = NULL;
++static Fl_Wayland_Text_Edit pending_edit = {};
++static Fl_Wayland_Edit_Handler edit_handler = NULL;
++static void *edit_handler_user = NULL;
++
++void fl_wl_set_edit_handler(Fl_Wayland_Edit_Handler handler, void *user) {
++  edit_handler = handler;
++  edit_handler_user = user;
++}
+ 
+ 
+ static void send_commit(struct zwp_text_input_v3 *zwp_text_input_v3) {
+@@ -937,6 +945,7 @@ void text_input_leave(void *data, struct zwp_text_input_v3 *zwp_text_input_v3,
+   zwp_text_input_v3_disable(zwp_text_input_v3);
+   zwp_text_input_v3_set_user_data(zwp_text_input_v3, NULL);
+   send_commit(zwp_text_input_v3);
++  pending_edit = Fl_Wayland_Text_Edit();
+   free(pending_pre_edit); pending_pre_edit = NULL;
+   free(current_pre_edit); current_pre_edit = NULL;
+   free(pending_commit); pending_commit = NULL;
+@@ -970,6 +979,9 @@ void text_input_preedit_string(void *data, struct zwp_text_input_v3 *zwp_text_in
+ //printf("text_input_preedit_string %s cursor_begin=%d cursor_end=%d\n",text, cursor_begin, cursor_end);
+   free(pending_pre_edit);
+   pending_pre_edit = text ? strdup(text) : NULL;
++  pending_edit.has_preedit = true;
++  pending_edit.cursor_begin = cursor_begin;
++  pending_edit.cursor_end = cursor_end;
+ }
+ 
+ 
+@@ -978,14 +990,16 @@ void text_input_commit_string(void *data, struct zwp_text_input_v3 *zwp_text_inp
+ //printf("text_input_commit_string %s\n",text);
+   free(pending_commit);
+   pending_commit = text ? strdup(text) : NULL;
++  pending_edit.has_commit = true;
+ }
+ 
+ 
+ void text_input_delete_surrounding_text(void *data,
+                                         struct zwp_text_input_v3 *zwp_text_input_v3,
+                                         uint32_t before_length, uint32_t after_length) {
+-  fprintf(stderr, "delete_surrounding_text before=%d adfter=%d\n",
+-          before_length,after_length);
++  pending_edit.has_deletion = true;
++  pending_edit.delete_before = before_length;
++  pending_edit.delete_after = after_length;
+ }
+ 
+ 
+@@ -994,6 +1008,19 @@ void text_input_done(void *data, struct zwp_text_input_v3 *zwp_text_input_v3,
+ //puts("text_input_done");
+   struct wl_surface *current_surface = (struct wl_surface*)data;
+   const bool bad_event = (serial != commit_serial);
++  Fl_Wayland_Text_Edit edit = pending_edit;
++  pending_edit = Fl_Wayland_Text_Edit();
++  edit.preedit = pending_pre_edit;
++  edit.commit = pending_commit;
++  edit.serial_matches = !bad_event;
++  if (current_surface && edit_handler && edit_handler(current_surface, edit, edit_handler_user)) {
++    free(current_pre_edit); current_pre_edit = NULL;
++    free(pending_pre_edit); pending_pre_edit = NULL;
++    free(pending_commit); pending_commit = NULL;
++    return;
++  }
++  if (edit.has_deletion)
++    fprintf(stderr, "delete_surrounding_text before=%u after=%u\n", edit.delete_before, edit.delete_after);
+   if ((pending_pre_edit == NULL && current_pre_edit == NULL) ||
+       (pending_pre_edit && current_pre_edit && strcmp(pending_pre_edit, current_pre_edit) == 0)) {
+       free(pending_pre_edit); pending_pre_edit = NULL;
+@@ -1040,6 +1067,7 @@ void Fl_Wayland_Screen_Driver::disable_im() {
+     zwp_text_input_v3_commit(seat->text_input);
+     zwp_text_input_v3_destroy(seat->text_input);
+     seat->text_input = NULL;
++    pending_edit = Fl_Wayland_Text_Edit();
+     free(pending_pre_edit); pending_pre_edit = NULL;
+     free(current_pre_edit); current_pre_edit = NULL;
+     free(pending_commit); pending_commit = NULL;

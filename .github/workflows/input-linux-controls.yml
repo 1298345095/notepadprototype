@@ -1,0 +1,58 @@
+name: Patched FLTK and wxGTK Wayland controls
+on:
+  push:
+    branches: [evaluate/fltk-native-input]
+    paths: ['experiments/input-host/patch/**', 'experiments/input-host/gtk/**', '.github/workflows/input-linux-controls.yml']
+  workflow_dispatch:
+permissions: {contents: read}
+jobs:
+  native-controls:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/checkout@v4
+        with: {repository: fltk/fltk, ref: a9b1113516ffd15fc7602a6d425a317df30f4720, path: deps/fltk, persist-credentials: false}
+      - uses: actions/checkout@v4
+        with: {repository: zufuliu/notepad4, ref: bc2fb59cd927288fc07bcdae48e91780cc5139d6, path: deps/notepad4, persist-credentials: false}
+      - name: Install Ubuntu compositor, host libraries and Pinyin
+        run: |
+          set -e
+          printf '%s\n' 'deb https://archive.ubuntu.com/ubuntu noble main universe' 'deb https://archive.ubuntu.com/ubuntu noble-updates main universe' 'deb https://archive.ubuntu.com/ubuntu noble-security main universe' > "$RUNNER_TEMP/ubuntu.list"
+          opts=(-o "Dir::Etc::SourceList=$RUNNER_TEMP/ubuntu.list" -o Dir::Etc::SourceParts=- -o Acquire::Retries=1 -o Acquire::https::Timeout=20)
+          sudo apt-get "${opts[@]}" -qq update
+          sudo apt-get "${opts[@]}" install -y --no-install-recommends libwayland-dev wayland-protocols libxkbcommon-dev libpango1.0-dev libcairo2-dev libdecor-0-dev libdbus-1-dev libgtk-3-dev libwxgtk3.2-dev weston sway xdotool xvfb xauth dbus-x11 fcitx5 fcitx5-modules fcitx5-pinyin wayland-utils xkb-data
+      - name: Prove opt-in transaction reaches fork Document on a native FLTK surface
+        id: patched
+        run: |
+          set -euo pipefail
+          export XDG_RUNTIME_DIR="$(mktemp -d)" WAYLAND_DISPLAY=wayland-np4 LIBGL_ALWAYS_SOFTWARE=1
+          xvfb-run -a weston --backend=x11-backend.so --socket="$WAYLAND_DISPLAY" --idle-time=0 --log="$RUNNER_TEMP/weston.log" &
+          compositor=$!
+          trap 'kill "$compositor" 2>/dev/null || true; cat "$RUNNER_TEMP/weston.log" 2>/dev/null || true' EXIT
+          for i in $(seq 1 100); do test ! -S "$XDG_RUNTIME_DIR/$WAYLAND_DISPLAY" || break; sleep .1; done
+          test -S "$XDG_RUNTIME_DIR/$WAYLAND_DISPLAY"
+          bash experiments/input-host/patch/run-native.sh deps/fltk deps/notepad4 experiments/cocoa "$RUNNER_TEMP/patched" | tee patched.log
+      - name: Compare the input-method cursor on wire and in the patched widget
+        if: '!cancelled() && steps.patched.outcome != ''skipped'''
+        run: |
+          test -x "$RUNNER_TEMP/patched/build/fltk-patched-pinyin"
+          timeout 95 bash experiments/input-host/fcitx/run.sh "$RUNNER_TEMP/patched/build/fltk-patched-pinyin" "$PWD/fcitx-patched-results"
+          python3 experiments/input-host/patch/check-cursor.py "$PWD/fcitx-patched-results"
+      - name: Compile wxGTK control and run the same real Sway-Pinyin sequence
+        if: '!cancelled() && steps.patched.outcome != ''skipped'''
+        run: |
+          curl -fsSL --retry 3 https://www.scintilla.org/scintilla568.tgz -o scintilla568.tgz
+          echo 'ca7fda23125289bbf473afd6fcd4959f65e828bff1a8ae60c603b34dfcb3a777  scintilla568.tgz' | sha256sum -c -
+          tar xzf scintilla568.tgz
+          bash experiments/input-host/gtk/build.sh "$PWD/scintilla" "$PWD/wxgtk-control"
+          timeout 95 bash experiments/input-host/fcitx/run.sh "$PWD/wxgtk-control" "$PWD/wxgtk-results"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: wxgtk-and-patched-fltk-evidence
+          path: |
+            patched.log
+            fcitx-patched-results/
+            wxgtk-results/

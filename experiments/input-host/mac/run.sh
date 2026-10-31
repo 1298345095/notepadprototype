@@ -25,4 +25,11 @@ clang++ -std=c++17 -fobjc-arc $("$cfg" --cxxflags) -std=c++17 "$define" \
     -I"$src/cocoa" -I"$src/include" -F"$build" \
     "$here/probe.mm" -framework Scintilla -framework Cocoa -framework Carbon $link \
     -Wl,-rpath,"$build" -o "$build/probe-$host"
-DYLD_FRAMEWORK_PATH="$build" "$build/probe-$host"
+bundle="$build/$host.app/Contents"
+mkdir -p "$bundle/MacOS"
+cp "$build/probe-$host" "$bundle/MacOS/probe"
+cat > "$bundle/Info.plist" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?><plist version="1.0"><dict><key>CFBundleExecutable</key><string>probe</string><key>CFBundleIdentifier</key><string>org.notepadprototype.input.$host</string><key>CFBundlePackageType</key><string>APPL</string><key>CFBundleName</key><string>Input $host</string></dict></plist>
+PLIST
+codesign --force --sign - "$build/$host.app"
+DYLD_FRAMEWORK_PATH="$build" "$bundle/MacOS/probe"

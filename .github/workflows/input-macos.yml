@@ -31,6 +31,14 @@ jobs:
         run: |
           set -o pipefail
           bash experiments/input-host/mac/run.sh "$PWD/scintilla" wx "$(brew --prefix wxwidgets@3.2)/bin/wx-config-3.2" 2>&1 | tee wx.txt
+      - name: Test the focused FLTK arrow handler and system key injection
+        if: '!cancelled() && steps.fltk.outcome != ''skipped'''
+        run: |
+          set -o pipefail
+          f=0
+          env NP4_ROUTE_ARROWS=1 NP4_PINYIN_QUARTZ=1 DYLD_FRAMEWORK_PATH="$PWD/build-mac-probe" "$PWD/build-mac-probe/fltk.app/Contents/MacOS/probe" 2>&1 | tee fltk-arrow.txt || f=$?
+          env NP4_PINYIN_QUARTZ=1 DYLD_FRAMEWORK_PATH="$PWD/build-mac-probe" "$PWD/build-mac-probe/wx.app/Contents/MacOS/probe" 2>&1 | tee wx-quartz.txt
+          exit "$f"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -38,3 +46,5 @@ jobs:
           path: |
             fltk.txt
             wx.txt
+            fltk-arrow.txt
+            wx-quartz.txt
