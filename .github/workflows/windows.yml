@@ -1,0 +1,58 @@
+name: Native Windows single-file builds
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  native:
+    name: ${{ matrix.gui }} / MSVC x64
+    runs-on: windows-2022
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - gui: fltk
+            repository: fltk/fltk
+            revision: a9b1113516ffd15fc7602a6d425a317df30f4720
+            submodules: false
+          - gui: wx
+            repository: wxWidgets/wxWidgets
+            revision: 749625e0ea4d70d1f75494aa52231d835531a618
+            submodules: true
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Fetch Notepad4 Win32 sources
+        uses: actions/checkout@v4
+        with:
+          repository: zufuliu/notepad4
+          ref: bc2fb59cd927288fc07bcdae48e91780cc5139d6
+          path: deps/notepad4
+          persist-credentials: false
+      - name: Fetch toolkit sources
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ matrix.repository }}
+          ref: ${{ matrix.revision }}
+          path: deps/gui
+          submodules: ${{ matrix.submodules }}
+          persist-credentials: false
+      - name: Compile and statically link with Visual Studio
+        shell: cmd
+        run: |
+          for /f "usebackq tokens=*" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set "VSROOT=%%i"
+          call "%VSROOT%\Common7\Tools\VsDevCmd.bat" -arch=x64 -host_arch=x64 || exit /b 1
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DNP4_GUI=${{ matrix.gui }} || exit /b 1
+          cmake --build build --target np4 --parallel 4 || exit /b 1
+      - name: Verify imports, editor and UTF-8 file save on Windows
+        shell: pwsh
+        run: ./tests/verify.ps1 -Exe ./build/out/np4-${{ matrix.gui }}-win64.exe
+      - uses: actions/upload-artifact@v4
+        with:
+          name: np4-${{ matrix.gui }}-win64
+          path: build/out/np4-${{ matrix.gui }}-win64.exe
+          if-no-files-found: error
