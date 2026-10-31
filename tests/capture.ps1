@@ -61,6 +61,28 @@ public static class Np4Capture {
         UIntPtr result;
         if (SendMessageTimeout(editor,0x0318,dc,new IntPtr(4),2,4000,out result)==IntPtr.Zero) throw new Exception("WM_PRINTCLIENT timed out");
     }
+    [StructLayout(LayoutKind.Sequential)] struct GuiThreadInfo {
+        public uint cbSize, flags;
+        public IntPtr active, focus, capture, menuOwner, moveSize, caret;
+        public Rect caretRect;
+    }
+    [DllImport("user32.dll")] static extern bool GetGUIThreadInfo(uint thread, ref GuiThreadInfo info);
+    // Windows x64 INPUT is 40 bytes, with its union starting at offset 8.
+    [StructLayout(LayoutKind.Explicit,Size=40)] struct Input64 {
+        [FieldOffset(0)] public uint type;
+        [FieldOffset(8)] public ushort vk;
+        [FieldOffset(12)] public uint flags;
+    }
+    [DllImport("user32.dll",SetLastError=true)] static extern uint SendInput(uint count, Input64[] input, int size);
+    public static void SelectAllUsingKeyboard(IntPtr parent, IntPtr editor, int pid) {
+        uint owner; uint tid=GetWindowThreadProcessId(editor,out owner);
+        GuiThreadInfo info=new GuiThreadInfo(); info.cbSize=(uint)Marshal.SizeOf<GuiThreadInfo>();
+        if(IntPtr.Size!=8 || owner!=(uint)pid || GetForegroundWindow()!=parent || !GetGUIThreadInfo(tid,ref info) || info.focus!=editor)
+            throw new Exception("Ctrl+A test requires its own foreground editor to hold keyboard focus");
+        var keys=new Input64[] {new Input64{type=1,vk=0x11}, new Input64{type=1,vk=0x41},
+            new Input64{type=1,vk=0x41,flags=2}, new Input64{type=1,vk=0x11,flags=2}};
+        if(SendInput(4,keys,Marshal.SizeOf<Input64>())!=4) throw new Exception("SendInput Ctrl+A failed: " + Marshal.GetLastWin32Error());
+    }
     public static void Invalidate(IntPtr w) { RedrawWindow(w,IntPtr.Zero,IntPtr.Zero,0x581); }
 }
 '@
@@ -201,6 +223,19 @@ function Save-WindowCapture([IO.FileInfo]$Exe, [string]$Target, [string]$File) {
         }
         if (!$bestRank) { throw "No painted editor body detected in $id. Original frames are in $raw." }
         Write-Host "Selected $id $($state.selected)"
+        # Observe initial state and save all screenshots before sending any keyboard input.
+        if ($File) {
+            [Np4Capture]::SelectAllUsingKeyboard($wnd,$child,$p.Id)
+            $until=[DateTime]::UtcNow.AddSeconds(3)
+            do {
+                Start-Sleep -Milliseconds 40
+                $selStart=[Np4Capture]::Query($child,2143,0); $selEnd=[Np4Capture]::Query($child,2145,0)
+            } while (($selStart -ne 0 -or $selEnd -ne $bytes) -and [DateTime]::UtcNow -lt $until)
+            $state['afterCtrlA']=@{selectionStart=$selStart; selectionEnd=$selEnd; expectedEnd=$bytes}
+            $state | ConvertTo-Json -Depth 7 | Set-Content -LiteralPath $statePath -Encoding utf8
+            if ($selStart -ne 0 -or $selEnd -ne $bytes) { throw "Real Ctrl+A selected [$selStart,$selEnd), expected [0,$bytes)" }
+            Write-Host "PASS real Ctrl+A ${id}: selected [0,$bytes) after the screenshots"
+        }
         return $bytes
     } finally {
         if (!$p.HasExited) { [void]$p.CloseMainWindow(); if (!$p.WaitForExit(2000)) { $p.Kill($true); $p.WaitForExit() } }
