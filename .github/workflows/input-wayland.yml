@@ -1,0 +1,49 @@
+name: FLTK native Wayland input evidence
+on:
+  push:
+    branches: [evaluate/fltk-native-input]
+    paths: ['experiments/input-host/wayland/**', '.github/workflows/input-wayland.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  native-wayland:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/checkout@v4
+        with:
+          repository: fltk/fltk
+          ref: a9b1113516ffd15fc7602a6d425a317df30f4720
+          path: deps/fltk
+          persist-credentials: false
+      - name: Install Weston and native Wayland development dependencies
+        run: |
+          sudo apt-get -qq update
+          sudo apt-get -qq install -y weston xvfb xauth ninja-build libwayland-dev wayland-protocols libxkbcommon-dev libpango1.0-dev libcairo2-dev libdecor-0-dev libdbus-1-dev libgtk-3-dev
+      - name: Compile Wayland-only FLTK 1.4.5 and the observer
+        run: |
+          cmake -S experiments/input-host/wayland -B build-wayland -G Ninja -DFLTK_SRC="$PWD/deps/fltk" -DCMAKE_BUILD_TYPE=Release
+          cmake --build build-wayland --target flwaystudy --parallel 4
+      - name: Verify real Wayland surface and replay text-input-v3 callbacks
+        run: |
+          set -euo pipefail
+          export XDG_RUNTIME_DIR="$(mktemp -d)"
+          export WAYLAND_DISPLAY=wayland-np4
+          export LIBGL_ALWAYS_SOFTWARE=1
+          xvfb-run -a weston --backend=x11-backend.so --socket="$WAYLAND_DISPLAY" --idle-time=0 --log="$RUNNER_TEMP/weston.log" &
+          compositor=$!
+          trap 'kill "$compositor" 2>/dev/null || true; cat "$RUNNER_TEMP/weston.log" 2>/dev/null || true' EXIT
+          for i in $(seq 1 100); do test ! -S "$XDG_RUNTIME_DIR/$WAYLAND_DISPLAY" || break; sleep 0.1; done
+          test -S "$XDG_RUNTIME_DIR/$WAYLAND_DISPLAY"
+          env -u DISPLAY FLTK_BACKEND=wayland timeout 30 build-wayland/flwaystudy | tee wayland-result.txt
+          cat wayland-result.txt >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: wayland-input-evidence
+          path: |
+            wayland-result.txt
+            ${{ runner.temp }}/weston.log
