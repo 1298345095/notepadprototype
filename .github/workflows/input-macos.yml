@@ -1,0 +1,40 @@
+name: FLTK vs wx native Cocoa host input
+on:
+  push:
+    branches: [evaluate/fltk-native-input]
+    paths: ['experiments/input-host/mac/**', '.github/workflows/input-macos.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  same-cocoa-view:
+    runs-on: macos-15
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - name: Install host SDKs and verify the Scintilla 5.6.8 comparison fixture
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: '1'
+        run: |
+          brew install fltk wxwidgets@3.2
+          curl -fsSL --retry 3 https://www.scintilla.org/scintilla568.tgz -o scintilla568.tgz
+          echo 'ca7fda23125289bbf473afd6fcd4959f65e828bff1a8ae60c603b34dfcb3a777  scintilla568.tgz' | shasum -a 256 -c -
+          tar xzf scintilla568.tgz
+      - name: Exercise native child in FLTK host
+        id: fltk
+        run: |
+          set -o pipefail
+          bash experiments/input-host/mac/run.sh "$PWD/scintilla" fltk "$(brew --prefix fltk)/bin/fltk-config" 2>&1 | tee fltk.txt
+      - name: Exercise same native child in wx host
+        if: '!cancelled() && steps.fltk.outcome != ''skipped'''
+        run: |
+          set -o pipefail
+          bash experiments/input-host/mac/run.sh "$PWD/scintilla" wx "$(brew --prefix wxwidgets@3.2)/bin/wx-config" 2>&1 | tee wx.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: native-cocoa-host-results
+          path: |
+            fltk.txt
+            wx.txt
