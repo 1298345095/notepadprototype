@@ -46,42 +46,65 @@ public static class Np4Capture {
         if(!SetWindowPos(w,IntPtr.Zero,32,32,width+r.R-r.L-c.R,height+r.B-r.T-c.B,0x0040)) throw new Exception("SetWindowPos failed");
     }
     public static int[] ClientSize(IntPtr w) { Rect c; GetClientRect(w,out c); return new int[]{c.R,c.B}; }
-    public static long Length(IntPtr editor) {
+    [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+    [DllImport("user32.dll",EntryPoint="GetWindowLongPtrW")] public static extern IntPtr WindowLong(IntPtr h, int index);
+    public static long Query(IntPtr editor, uint message, int index=0) {
         UIntPtr result;
-        if(SendMessageTimeout(editor,2006,IntPtr.Zero,IntPtr.Zero,2,3000,out result)==IntPtr.Zero) throw new Exception("SCI_GETLENGTH timeout");
-        return (long)result.ToUInt64();
+        if (SendMessageTimeout(editor,message,new IntPtr(index),IntPtr.Zero,2,3000,out result)==IntPtr.Zero) throw new Exception("Scintilla query timed out: " + message);
+        return unchecked((long)result.ToUInt64());
+    }
+    public static void PrintClient(IntPtr editor, IntPtr dc) {
+        UIntPtr result;
+        if (SendMessageTimeout(editor,0x0318,dc,new IntPtr(4),2,4000,out result)==IntPtr.Zero) throw new Exception("WM_PRINTCLIENT timed out");
     }
     public static void Invalidate(IntPtr w) { RedrawWindow(w,IntPtr.Zero,IntPtr.Zero,0x581); }
 }
 '@
 
-function Get-WindowBitmap([IntPtr]$Window, [bool]$FromScreen) {
+function Get-WindowBitmap([IntPtr]$Window, [string]$Mode) {
     $r = [Np4Capture]::Bounds($Window)
-    $bitmap = [Drawing.Bitmap]::new($r.R-$r.L, $r.B-$r.T, [Drawing.Imaging.PixelFormat]::Format24bppRgb)
+    $bitmap = [Drawing.Bitmap]::new($r.R-$r.L, $r.B-$r.T, [Drawing.Imaging.PixelFormat]::Format32bppRgb)
     $g = [Drawing.Graphics]::FromImage($bitmap)
     try {
         $g.Clear([Drawing.Color]::Fuchsia)
-        if ($FromScreen) {
-            $g.CopyFromScreen($r.L, $r.T, 0, 0, $bitmap.Size)
+        if ($Mode -eq 'desktop') {
+            $g.CopyFromScreen($r.L,$r.T,0,0,$bitmap.Size)
         } else {
             $dc = $g.GetHdc()
-            try { [void][Np4Capture]::PrintWindow($Window, $dc, 2) } finally { $g.ReleaseHdc($dc) }
+            try {
+                if ($Mode -eq 'child-wm-printclient') { [Np4Capture]::PrintClient($Window,$dc) }
+                else { [void][Np4Capture]::PrintWindow($Window,$dc,2) }
+            } finally { $g.ReleaseHdc($dc) }
         }
+    } catch {
+        $bitmap.Dispose()
+        throw
     } finally { $g.Dispose() }
     return $bitmap
 }
 
-function Test-EditorPixels($Bitmap, [int]$Left, [int]$Top, [bool]$HasText) {
-    # Inspect only the upper editor body, excluding the title, borders and scrollbars.
-    $white = 0; $ink = 0
-    for ($y = $Top + 2; $y -lt $Top + 122; $y += 2) {
-        for ($x = $Left + 5; $x -lt $Left + 305; $x += 2) {
-            $c = $Bitmap.GetPixel($x,$y)
-            if ($c.R -gt 235 -and $c.G -gt 235 -and $c.B -gt 235) { $white++ }
-            if ($c.G -lt 165 -and [Math]::Max($c.R, $c.B) -gt $c.G + 16 -and $c.R -lt 225) { $ink++ }
+function Measure-EditorPixels($Bitmap,[int]$Left,[int]$Top,[int]$Width,[int]$Height) {
+    # Count ink and rows inside the body, separate near-grey glyphs from colours.
+    # Starting a little beyond the left margin excludes its vertical divider.
+    $white=0; $ink=0; $colour=0; $rows=0; $total=0; $black=0; $pink=0
+    $x0=[Math]::Max(0,$Left+23); $y0=[Math]::Max(0,$Top+1)
+    $x1=[Math]::Min($Bitmap.Width,$Left+[Math]::Min(390,$Width-20))
+    $y1=[Math]::Min($Bitmap.Height,$Top+[Math]::Min(185,$Height-18))
+    for ($y=$y0; $y -lt $y1; $y+=2) {
+        $rowInk=0
+        for ($x=$x0; $x -lt $x1; $x+=2) {
+            $c=$Bitmap.GetPixel($x,$y); $total++
+            $max=[Math]::Max($c.B,[Math]::Max($c.R,$c.G)); $min=[Math]::Min($c.B,[Math]::Min($c.R,$c.G))
+            if ($min -gt 235) { $white++ }
+            if ($max -lt 15) { $black++ }
+            if ($c.R -gt 245 -and $c.G -lt 8 -and $c.B -gt 245) { $pink++; continue }
+            if ($max -lt 195 -or ($min -lt 145 -and $max -lt 230)) {
+                $ink++; $rowInk++; if ($max-$min -gt 20) { $colour++ }
+            }
         }
+        if ($rowInk -ge 3) { $rows++ }
     }
-    return $white -gt 4500 -and (!$HasText -or $ink -gt 6)
+    return [pscustomobject]@{samples=$total; white=$white; ink=$ink; colour=$colour; greyInk=$ink-$colour; inkRows=$rows; black=$black; sentinel=$pink}
 }
 
 function Save-WindowCapture([IO.FileInfo]$Exe, [string]$Target, [string]$File) {
@@ -106,22 +129,59 @@ function Save-WindowCapture([IO.FileInfo]$Exe, [string]$Target, [string]$File) {
         Start-Sleep -Milliseconds 650
         $client = [Np4Capture]::ClientSize($wnd)
         if ($client[0] -ne 466 -or $client[1] -ne 250) { throw "Unexpected client dimensions: $client" }
-        $bytes = [Np4Capture]::Length($child)
+        $bytes = [Np4Capture]::Query($child,2006,0)
         if ($File -and $bytes -ne (Get-Item -LiteralPath $File).Length) { throw 'The input did not reach the fork document.' }
-        $outer = [Np4Capture]::Bounds($wnd); $inner = [Np4Capture]::Bounds($child)
-        $left = $inner.L - $outer.L; $top = $inner.T - $outer.T
-        $saved = $false
-        foreach ($screen in @($false,$true)) {
-            $img = Get-WindowBitmap $wnd $screen
-            try {
-                if (Test-EditorPixels $img $left $top ($bytes -gt 0)) {
-                    $img.Save($Target, [Drawing.Imaging.ImageFormat]::Png)
-                    Write-Host "Captured $($Exe.Name) bytes=$bytes client=$client via $(if($screen){'screen'}else{'PrintWindow'})"
-                    $saved = $true; break
-                }
-            } finally { $img.Dispose() }
+        $outer=[Np4Capture]::Bounds($wnd); $inner=[Np4Capture]::Bounds($child)
+        $left=$inner.L-$outer.L; $top=$inner.T-$outer.T; $width=$inner.R-$inner.L; $height=$inner.B-$inner.T
+        $id=[IO.Path]::GetFileNameWithoutExtension($Target)
+        $raw=[IO.Directory]::CreateDirectory((Join-Path ([IO.Path]::GetDirectoryName($Target)) 'diagnostic')).FullName
+        $fg=[Np4Capture]::GetForegroundWindow()
+        $state=[ordered]@{name=$id; hwnd=$wnd.ToInt64(); child=$child.ToInt64(); foreground=$fg.ToInt64();
+            parentRect=@($outer.L,$outer.T,$outer.R,$outer.B); childRect=@($inner.L,$inner.T,$inner.R,$inner.B);
+            childClient=[Np4Capture]::ClientSize($child); parentStyle=('0x{0:X}' -f [Np4Capture]::WindowLong($wnd,-16).ToInt64());
+            childStyle=('0x{0:X}' -f [Np4Capture]::WindowLong($child,-16).ToInt64()); bytes=$bytes;
+            lexer=[Np4Capture]::Query($child,4002,0); endStyled=[Np4Capture]::Query($child,2028,0);
+            firstVisibleLine=[Np4Capture]::Query($child,2152,0); xOffset=[Np4Capture]::Query($child,2398,0);
+            linesOnScreen=[Np4Capture]::Query($child,2370,0); frames=@(); selected=$null}
+        if($File) {
+            $source=[IO.File]::ReadAllText($File); $styles=[ordered]@{}
+            foreach($token in 'editor','Notepad4','11','false') {
+                $index=$source.IndexOf($token,[StringComparison]::Ordinal)
+                $pos=[Text.Encoding]::UTF8.GetByteCount($source.Substring(0,$index))
+                $style=[Np4Capture]::Query($child,2038,$pos)
+                $styles[$token]=@{style=$style; pos=$pos; colourref=('0x{0:X6}' -f [Np4Capture]::Query($child,2481,[int]$style))}
+            }
+            $state['styles']=$styles
         }
-        if (!$saved) { throw "No correctly painted native editor in $($Exe.Name) capture." }
+        $statePath=Join-Path $raw "$id-state.json"
+        $state | ConvertTo-Json -Depth 7 | Set-Content -LiteralPath $statePath -Encoding utf8
+        Write-Host "Capture state $($state | ConvertTo-Json -Depth 7 -Compress)"
+        $bestRank=0
+        foreach($mode in 'desktop','parent-printwindow','child-printwindow','child-wm-printclient') {
+            $isChild=$mode.StartsWith('child-'); $handle=if($isChild){$child}else{$wnd}
+            $x=if($isChild){0}else{$left}; $y=if($isChild){0}else{$top}
+            $img=$null
+            try {
+                $img=Get-WindowBitmap $handle $mode
+                $filename=Join-Path $raw "$id-$mode.png"
+                $img.Save($filename,[Drawing.Imaging.ImageFormat]::Png)
+                $quality=Measure-EditorPixels $img $x $y $width $height
+                $state.frames+=@{mode=$mode; width=$img.Width; height=$img.Height; pixels=$quality}
+                Write-Host "$id $mode $($quality | ConvertTo-Json -Compress)"
+                $expectedRows=if ($File) {10} else {2}
+                $textPresent=$quality.ink -ge 10 -and $quality.inkRows -ge $expectedRows
+                $ok=$quality.samples -gt 300 -and $quality.white -gt 0.45*$quality.samples -and (!$bytes -or $textPresent)
+                $rank=switch($mode){ 'desktop' {if($fg -eq $wnd){4}else{0}} 'parent-printwindow'{3} 'child-printwindow'{2} default{1} }
+                if($ok -and $rank -gt $bestRank) {
+                    Copy-Item -LiteralPath $filename -Destination $Target -Force
+                    $state.selected=$mode; $bestRank=$rank
+                }
+            } catch { $state.frames+=@{mode=$mode; error=$_.Exception.Message}; Write-Warning "$id $mode capture failed: $($_.Exception.Message)" }
+            finally { if($img){ $img.Dispose() } }
+        }
+        $state | ConvertTo-Json -Depth 7 | Set-Content -LiteralPath $statePath -Encoding utf8
+        if (!$bestRank) { throw "No painted editor body detected in $id. Original frames are in $raw." }
+        Write-Host "Selected $id $($state.selected)"
         return $bytes
     } finally {
         if (!$p.HasExited) { [void]$p.CloseMainWindow(); if (!$p.WaitForExit(2000)) { $p.Kill($true); $p.WaitForExit() } }
@@ -167,12 +227,17 @@ $text = @'
 [IO.File]::WriteAllText($sample, $text.Replace("`r`n","`n"), [Text.UTF8Encoding]::new($false))
 $previousDpi = [Np4Capture]::SetThreadDpiAwarenessContext([IntPtr](-4))
 try {
+    $failed=@()
     foreach ($pair in @(@('fltk',$FltkExe),@('wx',$WxExe))) {
         $name, $exePath = $pair
         $exe = Get-Item -LiteralPath $exePath
-        [void](Save-WindowCapture $exe (Join-Path $out "$name.png") $sample)
-        $initialBytes = Save-WindowCapture $exe (Join-Path $out "$name-startup.png") ''
-        Write-Host "$name no-argument document bytes: $initialBytes"
+        foreach ($startup in @($false,$true)) {
+            $target=if($startup){"$name-startup.png"}else{"$name.png"}
+            $file=if($startup){''}else{$sample}
+            try { [void](Save-WindowCapture $exe (Join-Path $out $target) $file) }
+            catch { Write-Warning "$target $($_.Exception.Message)"; $failed+=$target }
+        }
     }
+    if($failed.Count){ throw "Capture(s) failed: $($failed -join ', '). See original PNG and JSON diagnostics." }
     Join-Captures $out
 } finally { if ($previousDpi -ne [IntPtr]::Zero) { [void][Np4Capture]::SetThreadDpiAwarenessContext($previousDpi) } }

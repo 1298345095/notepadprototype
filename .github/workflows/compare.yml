@@ -1,5 +1,9 @@
 name: Compare verified Windows executables
 on:
+  push:
+    branches: [main]
+    paths: [tests/capture.ps1, tests/compare.ps1, .github/workflows/compare.yml]
+  workflow_dispatch:
   workflow_run:
     workflows: [Native Windows single-file builds]
     types: [completed]
@@ -9,18 +13,32 @@ permissions:
   actions: read
 jobs:
   compare:
-    if: github.event.workflow_run.conclusion == 'success'
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: windows-2022
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+      - name: Select verified build
+        id: verified
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          COMPLETED_RUN: ${{ github.event.workflow_run.id }}
+        run: |
+          $id = $env:COMPLETED_RUN
+          if (-not $id) {
+            $id = gh api "repos/$env:GITHUB_REPOSITORY/actions/workflows/windows.yml/runs?status=success&branch=main&per_page=1" --jq '.workflow_runs[0].id'
+            if ($LASTEXITCODE -ne 0 -or $id -notmatch '^\d+$') { throw 'No verified build found' }
+          }
+          Write-Host "Using binaries from Windows build $id"
+          "run_id=$id" >> $env:GITHUB_OUTPUT
       - name: Download the verified pair from the same build
         uses: actions/download-artifact@v4
         with:
           github-token: ${{ github.token }}
-          run-id: ${{ github.event.workflow_run.id }}
+          run-id: ${{ steps.verified.outputs.run_id }}
           pattern: np4-*-win64
           path: binaries
       - name: Measure both executables on this runner
@@ -35,6 +53,7 @@ jobs:
         shell: pwsh
         run: ./tests/capture.ps1 -FltkExe ./binaries/np4-fltk-win64/np4-fltk-win64.exe -WxExe ./binaries/np4-wx-win64/np4-wx-win64.exe -OutDir screenshots
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: native-windows-appearance
           path: screenshots/
