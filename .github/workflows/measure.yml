@@ -1,0 +1,65 @@
+name: Compare verified additional toolkit hosts
+on:
+  push:
+    branches: [evaluate/native-toolkit-hosts]
+    paths: [experiments/measure/**, .github/workflows/measure.yml]
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  scripting-footprint:
+    runs-on: windows-2022
+    timeout-minutes: 8
+    steps:
+      - name: Retrieve measured Kivy one-file sizes from the verified build
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $log = gh api "repos/$env:GITHUB_REPOSITORY/actions/jobs/124678202151/logs"
+          if ($LASTEXITCODE) { throw 'Could not read the verified Kivy job' }
+          $sizes = @($log | Select-String -CaseSensitive -Pattern 'PASS Kivy:|PASS np4-kivy-probe.exe  Bytes=')
+          if ($sizes.Count -lt 2) { throw 'Incomplete original result' }
+          $sizes | ForEach-Object { Write-Output $_.Line; $_.Line >> $env:GITHUB_STEP_SUMMARY }
+  common-runner:
+    runs-on: windows-2022
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - name: Download the verified executables
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $r = Get-Content experiments/measure/inputs.json -Raw | ConvertFrom-Json
+          foreach ($targetRun in @($r.fltk,$r.wx,$r.fox,$r.tk | Sort-Object -Unique)) {
+            if ($targetRun -gt 0) { gh run watch $targetRun --repo $env:GITHUB_REPOSITORY --interval 10 --compact }
+          }
+          foreach ($name in 'fltk','wx','fox','tk') {
+            $id = $r.$name
+            if ($id -gt 0) {
+              gh run download $id --repo $env:GITHUB_REPOSITORY -n "np4-$name-win64" -D "bins/$name"
+              if ($LASTEXITCODE) { throw "Could not fetch artifact $name from run $id" }
+            }
+          }
+      - name: Compare the same full native fork workload
+        shell: pwsh
+        run: |
+          $argsForBench = @('--out','results','--startup')
+          foreach ($name in 'fltk','wx','fox','tk') {
+            if (Test-Path "bins/$name") {
+              $files = @(Get-ChildItem "bins/$name" -File -Filter '*.exe')
+              if ($files.Count -ne 1) { throw "Expected a single verified EXE for $name" }
+              $argsForBench += @("--$name",$files[0].FullName)
+            }
+          }
+          python experiments/measure/windows.py @argsForBench
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: toolkit-native-samples
+          path: results/
+          if-no-files-found: warn
