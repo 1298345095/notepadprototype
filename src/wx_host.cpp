@@ -79,6 +79,10 @@ class NativeFrame final : public wxFrame {
     }
     static LRESULT CALLBACK KeyProc(HWND win, UINT msg, WPARAM wp, LPARAM lp,
                                      UINT_PTR id, DWORD_PTR context) {
+        // wx uses DLGC_HASSETSEL to select an entire field on keyboard focus.
+        // Keep the caret and any existing selection in this multiline editor.
+        if (msg == WM_GETDLGCODE)
+            return ::DefSubclassProc(win, msg, wp, lp) & ~static_cast<LRESULT>(DLGC_HASSETSEL);
         if (msg == WM_KEYDOWN && wp == 'S' && (::GetKeyState(VK_CONTROL) & 0x8000)) {
             reinterpret_cast<NativeFrame*>(context)->Save();
             return 0;
@@ -127,7 +131,16 @@ public:
     }
     bool SelfTest() {
         static_assert(SCI_GETCHARACTERANDWIDTH == 2067);
-        if (Bytes() != startupDemo || Sci(SCI_GETLEXER) != SCLEX_JSON) return false;
+        if (Bytes() != startupDemo || Sci(SCI_GETLEXER) != SCLEX_JSON ||
+            Sci(SCI_GETANCHOR) != 0 || Sci(SCI_GETCURRENTPOS) != 0) return false;
+        // Reproduce the wx keyboard-navigation path after selecting part of the text.
+        wxWindow* editor = FindWindow(::GetDlgCtrlID(sci));
+        if (!editor) return false;
+        Sci(SCI_SETSEL, 1, 3);
+        editor->SetFocusFromKbd();
+        if (Sci(SCI_GETSELECTIONSTART) != 1 || Sci(SCI_GETSELECTIONEND) != 3) return false;
+        Sci(SCI_SELECTALL); // The fork's Ctrl+A command remains available on demand.
+        if (Sci(SCI_GETSELECTIONSTART) != 0 || Sci(SCI_GETSELECTIONEND) != Sci(SCI_GETLENGTH)) return false;
         const std::string sample = "{\"name\":\"中文😀\"}\n";
         SetDocument(sample, true);
         Sci(SCI_COLOURISE, 0, -1);
