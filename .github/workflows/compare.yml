@@ -1,0 +1,33 @@
+name: Compare verified Windows executables
+on:
+  workflow_run:
+    workflows: [Native Windows single-file builds]
+    types: [completed]
+    branches: [main]
+permissions:
+  contents: read
+  actions: read
+jobs:
+  compare:
+    if: github.event.workflow_run.conclusion == 'success'
+    runs-on: windows-2022
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Download the verified pair from the same build
+        uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ github.token }}
+          run-id: ${{ github.event.workflow_run.id }}
+          pattern: np4-*-win64
+          path: binaries
+      - name: Measure both executables on this runner
+        shell: pwsh
+        run: ./tests/compare.ps1 -FltkExe ./binaries/np4-fltk-win64/np4-fltk-win64.exe -WxExe ./binaries/np4-wx-win64/np4-wx-win64.exe -OutDir results
+      - uses: actions/upload-artifact@v4
+        with:
+          name: native-windows-measurements
+          path: results/
+          if-no-files-found: error
