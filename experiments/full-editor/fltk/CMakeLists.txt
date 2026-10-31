@@ -1,0 +1,8 @@
+if(NOT TARGET fltk::fltk)
+  find_package(FLTK 1.4 CONFIG REQUIRED)
+endif()
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(FLTK_PANGO REQUIRED IMPORTED_TARGET pangocairo)
+add_executable(fltk-study editor.cpp surface.cpp window.cpp)
+target_compile_features(fltk-study PRIVATE cxx_std_20)
+target_link_libraries(fltk-study PRIVATE np4_study np4_core fltk::fltk PkgConfig::FLTK_PANGO)

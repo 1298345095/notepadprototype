@@ -1,0 +1,56 @@
+name: Full Notepad4 fork native Wayland comparison
+on:
+  push:
+    branches: [evaluate/full-editor-wayland]
+    paths: ['experiments/full-editor/**', '.github/workflows/full-editor-wayland.yml']
+  workflow_dispatch:
+permissions: {contents: read}
+jobs:
+  native:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/checkout@v4
+        with: {repository: zufuliu/notepad4, ref: bc2fb59cd927288fc07bcdae48e91780cc5139d6, path: deps/notepad4, persist-credentials: false}
+      - uses: actions/checkout@v4
+        with: {repository: fltk/fltk, ref: a9b1113516ffd15fc7602a6d425a317df30f4720, path: deps/fltk, persist-credentials: false}
+      - uses: actions/checkout@v4
+        with: {repository: wxWidgets/wxWidgets, ref: 749625e0ea4d70d1f75494aa52231d835531a618, path: deps/wx, persist-credentials: false}
+      - name: Install native graphics, Sway, fonts and Fcitx5 Pinyin
+        run: |
+          printf '%s\n' 'deb https://archive.ubuntu.com/ubuntu noble main universe' 'deb https://archive.ubuntu.com/ubuntu noble-updates main universe' 'deb https://archive.ubuntu.com/ubuntu noble-security main universe' > "$RUNNER_TEMP/ubuntu.list"
+          opts=(-o "Dir::Etc::SourceList=$RUNNER_TEMP/ubuntu.list" -o Dir::Etc::SourceParts=- -o Acquire::Retries=1 -o Acquire::https::Timeout=25)
+          sudo apt-get "${opts[@]}" -qq update
+          sudo apt-get "${opts[@]}" install -y --no-install-recommends libgtk-3-dev libwayland-dev wayland-protocols libxkbcommon-dev libpango1.0-dev libcairo2-dev libdecor-0-dev libdbus-1-dev libpcre2-dev libexpat1-dev zlib1g-dev libpng-dev libjpeg-dev libtiff-dev fcitx5 fcitx5-modules fcitx5-pinyin fonts-dejavu-core fonts-noto-cjk fonts-noto-color-emoji sway grim xdotool xvfb xauth dbus-x11 wayland-utils ninja-build
+          curl -fsSL --retry 3 https://www.scintilla.org/scintilla568.tgz -o donor.tgz
+          echo 'ca7fda23125289bbf473afd6fcd4959f65e828bff1a8ae60c603b34dfcb3a777  donor.tgz' | sha256sum -c -
+          tar -C deps -xzf donor.tgz
+      - name: Build both static-toolkit hosts against the same Notepad4 fork
+        run: bash experiments/full-editor/build.sh deps/notepad4 deps/fltk deps/scintilla deps/wx out
+      - name: Drive both editors on native Wayland in alternating order
+        run: |
+          set -uo pipefail
+          failures=0
+          for entry in 'fltk 1' 'wx 1' 'wx 2' 'fltk 2' 'fltk 3' 'wx 3'; do
+            read -r ui trial <<< "$entry"
+            timeout 110 bash experiments/full-editor/runner/run.sh "out/bin/$ui-study" "results/$ui-$trial" || failures=1
+          done
+          python3 experiments/full-editor/runner/summary.py results out/bin | tee report.txt
+          cat report.txt >> "$GITHUB_STEP_SUMMARY"
+          exit "$failures"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: wayland-full-editor-evidence
+          path: |
+            results/
+            report.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: linux-x86_64-editor-prototypes
+          path: |
+            out/bin/
+            out/licenses/
