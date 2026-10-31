@@ -1,0 +1,102 @@
+name: Additional Notepad4 toolkit probes
+on:
+  push:
+    branches: [evaluate/native-toolkit-hosts]
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  native:
+    name: ${{ matrix.ui }} static C++
+    runs-on: windows-2022
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        ui: [fox, tk]
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/checkout@v4
+        with:
+          repository: zufuliu/notepad4
+          ref: bc2fb59cd927288fc07bcdae48e91780cc5139d6
+          path: deps/notepad4
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        if: matrix.ui == 'tk'
+        with:
+          repository: tcltk/tcl
+          ref: c655b4770b1d6d32a8cbffd6cef59db6029fe19e
+          path: deps/tcl
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        if: matrix.ui == 'tk'
+        with:
+          repository: tcltk/tk
+          ref: 584f8fcf62c320d7c341e77171188cb4d79c3725
+          path: deps/tk
+          persist-credentials: false
+      - name: Compile actual fork and native toolkit
+        shell: cmd
+        run: |
+          for /f "usebackq tokens=*" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set "VSROOT=%%i"
+          call "%VSROOT%\Common7\Tools\VsDevCmd.bat" -arch=x64 -host_arch=x64 || exit /b 1
+          pwsh -NoProfile -File experiments/${{ matrix.ui }}/build.ps1 || exit /b 1
+      - name: Check actual single EXE, isolated UTF-8 open and save
+        shell: pwsh
+        run: ./tests/verify.ps1 -Exe ./out/${{ matrix.ui }}/np4-${{ matrix.ui }}.exe
+      - uses: actions/upload-artifact@v4
+        with:
+          name: np4-${{ matrix.ui }}-win64
+          path: out/${{ matrix.ui }}/np4-${{ matrix.ui }}.exe
+          if-no-files-found: error
+  bindings:
+    name: ${{ matrix.ui }} native-child test
+    runs-on: windows-2022
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        ui: [kivy, fxruby]
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/checkout@v4
+        with:
+          repository: zufuliu/notepad4
+          ref: bc2fb59cd927288fc07bcdae48e91780cc5139d6
+          path: deps/notepad4
+          persist-credentials: false
+      - name: Build the native fork helper with MSVC
+        shell: cmd
+        run: |
+          for /f "usebackq tokens=*" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set "VSROOT=%%i"
+          call "%VSROOT%\Common7\Tools\VsDevCmd.bat" -arch=x64 -host_arch=x64 || exit /b 1
+          cmake -S experiments/core-probe -B build-probe -G Ninja -DCMAKE_BUILD_TYPE=Release || exit /b 1
+          cmake --build build-probe --target NP4Probe --parallel 4 || exit /b 1
+      - if: matrix.ui == 'kivy'
+        uses: actions/setup-python@v5
+        with: {python-version: '3.12', architecture: x64}
+      - if: matrix.ui == 'kivy'
+        shell: pwsh
+        name: Test the SDL2 child and the frozen executable
+        run: ./experiments/kivy/build.ps1 -Dll ./build-probe/NP4Probe.dll -OutDir ./out/kivy
+      - if: matrix.ui == 'kivy'
+        uses: actions/upload-artifact@v4
+        with:
+          name: np4-kivy-probe-win64
+          path: out/kivy/np4-kivy-probe.exe
+          if-no-files-found: error
+      - if: matrix.ui == 'fxruby'
+        uses: ruby/setup-ruby@v1
+        with: {ruby-version: '3.3'}
+      - if: matrix.ui == 'fxruby'
+        shell: pwsh
+        name: Exercise the native child from FXRuby
+        run: |
+          gem install fxruby -v 1.6.50 --no-document
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          ruby experiments/fxruby/probe.rb build-probe/NP4Probe.dll
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
