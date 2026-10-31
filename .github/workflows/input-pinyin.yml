@@ -1,0 +1,42 @@
+name: Real Fcitx5 Pinyin on Sway
+on:
+  push:
+    branches: [evaluate/fltk-native-input]
+    paths: ['experiments/input-host/fcitx/**', '.github/workflows/input-pinyin.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  fcitx:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/checkout@v4
+        with:
+          repository: fltk/fltk
+          ref: a9b1113516ffd15fc7602a6d425a317df30f4720
+          path: deps/fltk
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: zufuliu/notepad4
+          ref: bc2fb59cd927288fc07bcdae48e91780cc5139d6
+          path: deps/notepad4
+          persist-credentials: false
+      - name: Install pinned-distribution native host and Pinyin dependencies
+        run: |
+          sudo apt-get -o Acquire::Retries=1 -o Acquire::http::Timeout=15 -qq update
+          sudo apt-get install -y --no-install-recommends ninja-build libwayland-dev wayland-protocols libxkbcommon-dev libpango1.0-dev libcairo2-dev libdecor-0-dev libdbus-1-dev libgtk-3-dev sway xdotool xvfb xauth dbus-x11 fcitx5 fcitx5-modules fcitx5-pinyin wayland-utils xkb-data fonts-noto-cjk
+      - name: Compile the fork Document and native FLTK observer
+        run: |
+          cmake -S experiments/input-host/fcitx -B rbuild -G Ninja -DFLTK_SRC="$PWD/deps/fltk" -DCOCOA_PROBE="$PWD/experiments/cocoa" -DNOTEPAD4_SRC="$PWD/deps/notepad4" -DCMAKE_BUILD_TYPE=Release
+          cmake --build rbuild --target real-pinyin --parallel 4
+      - name: Check conversion, cursor movement and cancellation with real Pinyin
+        run: timeout 95 bash experiments/input-host/fcitx/run.sh rbuild/real-pinyin "$PWD/fcitx-results"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: sway-fcitx-input
+          path: fcitx-results/
