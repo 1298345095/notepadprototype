@@ -34,6 +34,8 @@ cp "$donor/License.txt" "$out/licenses/Scintilla.txt"
 cp "$fork/scintilla/License.txt" "$out/licenses/Notepad4-Scintilla.txt"
 cp "$toolkit/COPYING" "$out/licenses/FLTK.txt"
 cp "$wxsrc/docs/licence.txt" "$out/licenses/wxWidgets.txt"
+cp "$wxsrc/docs/lgpl.txt" "$out/licenses/wxWidgets-LGPL.txt"
+cp "$toolkit/libdecor/LICENSE" "$out/licenses/libdecor.txt"
 (cd "$out/bin" && sha256sum *-study > SHA256SUMS)
 mkdir -p "$out/packages"
 for ui in fltk wx; do
