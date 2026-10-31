@@ -20,6 +20,10 @@ public static class Np4Capture {
     [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr w);
     [DllImport("user32.dll")] public static extern IntPtr SetThreadDpiAwarenessContext(IntPtr ctx);
     [DllImport("user32.dll")] static extern bool GetWindowRect(IntPtr w, out Rect r);
+    [DllImport("dwmapi.dll")] static extern int DwmGetWindowAttribute(IntPtr w, uint attribute, out Rect rect, int size);
+    public static Rect VisibleFrame(IntPtr w) {
+        Rect r; return DwmGetWindowAttribute(w,9,out r,Marshal.SizeOf<Rect>()) == 0 ? r : new Rect();
+    }
     [DllImport("user32.dll")] static extern bool GetClientRect(IntPtr w, out Rect r);
     [DllImport("user32.dll")] static extern bool SetWindowPos(IntPtr w, IntPtr insertAfter, int x,int y,int width,int height,uint flags);
     [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr w);
@@ -132,14 +136,18 @@ function Save-WindowCapture([IO.FileInfo]$Exe, [string]$Target, [string]$File) {
         $bytes = [Np4Capture]::Query($child,2006,0)
         if ($File -and $bytes -ne (Get-Item -LiteralPath $File).Length) { throw 'The input did not reach the fork document.' }
         $outer=[Np4Capture]::Bounds($wnd); $inner=[Np4Capture]::Bounds($child)
+        $frame=[Np4Capture]::VisibleFrame($wnd)
+        $frameValid=$frame.L -ge $outer.L -and $frame.T -ge $outer.T -and $frame.R -le $outer.R -and $frame.B -le $outer.B -and $frame.R -gt $frame.L -and $frame.B -gt $frame.T
         $left=$inner.L-$outer.L; $top=$inner.T-$outer.T; $width=$inner.R-$inner.L; $height=$inner.B-$inner.T
         $id=[IO.Path]::GetFileNameWithoutExtension($Target)
         $raw=[IO.Directory]::CreateDirectory((Join-Path ([IO.Path]::GetDirectoryName($Target)) 'diagnostic')).FullName
         $fg=[Np4Capture]::GetForegroundWindow()
         $state=[ordered]@{name=$id; hwnd=$wnd.ToInt64(); child=$child.ToInt64(); foreground=$fg.ToInt64();
-            parentRect=@($outer.L,$outer.T,$outer.R,$outer.B); childRect=@($inner.L,$inner.T,$inner.R,$inner.B);
+            parentRect=@($outer.L,$outer.T,$outer.R,$outer.B); visibleFrame=@($frame.L,$frame.T,$frame.R,$frame.B); childRect=@($inner.L,$inner.T,$inner.R,$inner.B);
             childClient=[Np4Capture]::ClientSize($child); parentStyle=('0x{0:X}' -f [Np4Capture]::WindowLong($wnd,-16).ToInt64());
             childStyle=('0x{0:X}' -f [Np4Capture]::WindowLong($child,-16).ToInt64()); bytes=$bytes;
+            selectionStart=[Np4Capture]::Query($child,2143,0); selectionEnd=[Np4Capture]::Query($child,2145,0);
+            caret=[Np4Capture]::Query($child,2008,0); anchor=[Np4Capture]::Query($child,2009,0); focus=[Np4Capture]::Query($child,2381,0);
             lexer=[Np4Capture]::Query($child,4002,0); endStyled=[Np4Capture]::Query($child,2028,0);
             firstVisibleLine=[Np4Capture]::Query($child,2152,0); xOffset=[Np4Capture]::Query($child,2398,0);
             linesOnScreen=[Np4Capture]::Query($child,2370,0); frames=@(); selected=$null}
@@ -173,13 +181,24 @@ function Save-WindowCapture([IO.FileInfo]$Exe, [string]$Target, [string]$File) {
                 $ok=$quality.samples -gt 300 -and $quality.white -gt 0.45*$quality.samples -and (!$bytes -or $textPresent)
                 $rank=switch($mode){ 'desktop' {if($fg -eq $wnd){4}else{0}} 'parent-printwindow'{3} 'child-printwindow'{2} default{1} }
                 if($ok -and $rank -gt $bestRank) {
-                    Copy-Item -LiteralPath $filename -Destination $Target -Force
+                    if ($isChild) {
+                        Copy-Item -LiteralPath $filename -Destination $Target -Force
+                    } elseif ($frameValid) {
+                        # GetWindowRect includes the DWM transparent resize border on modern desktops.
+                        # Keep only the actually visible native frame; preserve the uncropped original in diagnostics.
+                        $bounds=[Drawing.Rectangle]::new($frame.L-$outer.L,$frame.T-$outer.T,$frame.R-$frame.L,$frame.B-$frame.T)
+                        $visible=$img.Clone($bounds,[Drawing.Imaging.PixelFormat]::Format32bppRgb)
+                        try { $visible.Save($Target,[Drawing.Imaging.ImageFormat]::Png) } finally { $visible.Dispose() }
+                    } else { continue }
                     $state.selected=$mode; $bestRank=$rank
                 }
             } catch { $state.frames+=@{mode=$mode; error=$_.Exception.Message}; Write-Warning "$id $mode capture failed: $($_.Exception.Message)" }
             finally { if($img){ $img.Dispose() } }
         }
         $state | ConvertTo-Json -Depth 7 | Set-Content -LiteralPath $statePath -Encoding utf8
+        if ($state.selectionStart -ne $state.selectionEnd -or $state.caret -ne $state.anchor) {
+            throw "Unexpected selection in $id (start=$($state.selectionStart) end=$($state.selectionEnd) anchor=$($state.anchor) caret=$($state.caret)). Original frames preserved."
+        }
         if (!$bestRank) { throw "No painted editor body detected in $id. Original frames are in $raw." }
         Write-Host "Selected $id $($state.selected)"
         return $bytes
@@ -201,8 +220,12 @@ function Join-Captures([string]$Directory) {
     try {
         $g.Clear([Drawing.Color]::FromArgb(240,243,246))
         $g.TextRenderingHint = [Drawing.Text.TextRenderingHint]::AntiAliasGridFit
-        $g.DrawString('FLTK', $font, $brush, 12, 10)
-        $g.DrawString('wxWidgets (wxMSW)', $font, $brush, $w+24, 10)
+        $fltkState = Get-Content -LiteralPath (Join-Path $Directory 'diagnostic/fltk-state.json') -Raw | ConvertFrom-Json
+        $wxState = Get-Content -LiteralPath (Join-Path $Directory 'diagnostic/wx-state.json') -Raw | ConvertFrom-Json
+        $fltkLabel = if($fltkState.selected -like 'child-*'){'FLTK  |  editor area'}else{'FLTK'}
+        $wxLabel = if($wxState.selected -like 'child-*'){'wxWidgets (wxMSW)  |  editor area'}else{'wxWidgets (wxMSW)'}
+        $g.DrawString($fltkLabel, $font, $brush, 12, 10)
+        $g.DrawString($wxLabel, $font, $brush, $w+24, 10)
         $g.DrawImageUnscaled($left,12,40)
         $g.DrawImageUnscaled($right,$w+24,40)
         $canvas.Save((Join-Path $Directory 'side-by-side.png'), [Drawing.Imaging.ImageFormat]::Png)
