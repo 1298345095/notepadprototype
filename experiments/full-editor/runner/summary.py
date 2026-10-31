@@ -3,6 +3,8 @@ from pathlib import Path
 from statistics import median
 import json
 import sys
+from frame_times import samples as frame_samples
+import math
 
 root, binaries=map(Path,sys.argv[1:])
 for ui in ('fltk','wx'):
@@ -16,3 +18,8 @@ for ui in ('fltk','wx'):
     if rows:
         for key in ('ready','dragplan','selection','ime','completion'):
             print(key, rows[0]['replies'].get(key,{}))
+    frames=sorted(value for p in sorted(root.glob(ui+'-*/editor-wire.log')) for value in frame_samples(p))
+    if frames:
+        print('preeditDoneToNextDamagedCommitMs', 'n',len(frames),'median',median(frames),'p95',frames[math.ceil(.95*len(frames))-1])
+    package=binaries.parent/'packages'/(ui+'-study.tar.xz')
+    if package.exists(): print('tar_xz_bytes',package.stat().st_size)

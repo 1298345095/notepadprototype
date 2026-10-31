@@ -161,6 +161,9 @@ std::string state(const std::string &action,int ox,int oy) {
         call(SCI_AUTOCCANCEL); call(SCI_SETTARGETRANGE,fixture.size(),call(SCI_GETLENGTH));call(SCI_REPLACETARGET,0,str(""));
         call(SCI_GOTOPOS,fixture.size());call(SCI_EMPTYUNDOBUFFER);
         candidates.clear();accepts=tentative=committed=0;o<<"ok=1";
+    } else if(action=="composition") {
+        o<<"caretOffset="<<(call(SCI_GETCURRENTPOS)-static_cast<intptr_t>(fixture.size()+prefix.size()))
+         <<"\ncurrentHex="<<encode(text().substr(fixture.size()+prefix.size()));
     } else if(action=="completion") {
         char first[512]{}; call(SCI_AUTOCGETCURRENTTEXT,0,reinterpret_cast<intptr_t>(first));
         o<<"active="<<call(SCI_AUTOCACTIVE)<<"\nfirst="<<first<<"\nlistedAlpha="<<(candidates.find(alpha)!=candidates.npos)<<"\nlistedBeta="<<(candidates.find(beta)!=candidates.npos);

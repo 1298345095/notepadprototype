@@ -165,6 +165,14 @@ def drive():
     for letter in 'nihao':
         key(letter)
     time.sleep(.20)
+    before = ask('composition')
+    key('Left')
+    left = ask('composition')
+    key('Right')
+    right = ask('composition')
+    snapshots = [before,left,right]
+    record('preedit_cursor_on_fork', [s.get('caretOffset') for s in snapshots] == ['6','5','6'] and
+        all(s.get('currentHex') == '6e692068616f' for s in snapshots), snapshots)
     key('space')
     time.sleep(.35)
     r = ask('ime')
@@ -199,6 +207,12 @@ finally:
                    updated.get('active')=='1' and updated.get('listedAlpha')=='1' and
                    updated.get('listedBeta')=='0' and updated.get('listedZeta')=='1',
                    dict(mutate=mutation, completion=updated))
+            ask('prefix')
+            invoke('xdotool','type','--delay','65','tr')
+            time.sleep(.16)
+            keyword=ask('completion')
+            record('json_keyword_from_application',keyword.get('active')=='1' and
+                   keyword.get('first')=='true' and keyword.get('targetHex')=='7472',keyword)
         except Exception as error:
             record('document_candidates_track_mutation',False,repr(error))
         try:

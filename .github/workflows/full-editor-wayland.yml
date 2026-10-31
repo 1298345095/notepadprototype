@@ -52,5 +52,5 @@ jobs:
         with:
           name: linux-x86_64-editor-prototypes
           path: |
-            out/bin/
-            out/licenses/
+            out/packages/*.tar.xz
+            out/packages/SHA256SUMS
